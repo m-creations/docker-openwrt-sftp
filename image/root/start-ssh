@@ -1,0 +1,36 @@
+#!/bin/bash
+
+for type in rsa dsa ecdsa ed25519; do {
+    # check for keys
+    key=/etc/ssh/ssh_host_${type}_key
+    [ ! -f $key ] && {
+        # generate missing keys
+        [ -x /usr/bin/ssh-keygen ] && {
+        /usr/bin/ssh-keygen -N '' -t $type -f $key
+    }
+    }
+}; done
+
+# this is by purpose not customisable with an env var: by having the
+# group name fixed, we can even restart with another SFTP_USER env var
+# and have everything still working
+groupadd sftp
+
+mkdir -m 0700 -p /var/empty
+mkdir -m 0755 -p /var/run
+
+existing=$(grep sftp /etc/passwd | cut -f 1 -d :)
+
+if [ "$existing" = "$SFTP_USER" ] ; then
+    usermod -d /data -s /bin/false -g sftp -p $(openssl passwd $SFTP_PASS) $SFTP_USER
+else
+    useradd -d /data -s /bin/false -g sftp -p $(openssl passwd $SFTP_PASS) $SFTP_USER
+fi
+
+mkdir -m 0755 -p /data/incoming
+chown root:root /data
+chown -R $SFTP_USER:sftp /data/incoming
+
+sed -ie "s/^Subsystem.*sftp.*/Subsystem sftp internal-sftp\nMatch Group sftp\n\tChrootDirectory \/data\n\tForceCommand internal-sftp/" /etc/ssh/sshd_config
+
+/usr/sbin/sshd -E /dev/console -D
