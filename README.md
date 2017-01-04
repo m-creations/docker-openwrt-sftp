@@ -10,13 +10,13 @@ The simplest case is to specify user name and password when starting
 the container:
 
 ```
-docker run -p 11022:22 -it --rm -e SFTP_USER=scott -e SFTP_PASSWORD=tiger mcreations/openwrt-sftp
+docker run -p 11022:22 -it --rm -e SFTP_USER=scott -e SFTP_PASS=tiger mcreations/openwrt-sftp
 ```
 
 Now, you can sftp to this docker instance with
 
 ```
-sftp -P 11022 sftp@localhost
+sftp -P 11022 scott@localhost
 ```
 
 Github Repo
