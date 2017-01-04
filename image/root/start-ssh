@@ -1,34 +1,57 @@
 #!/bin/bash
+mkdir -p $DATA_SSH_PATH
+chmod -R 700 $DATA_SSH_PATH
 
 for type in rsa dsa ecdsa ed25519; do {
     # check for keys
-    key=/etc/ssh/ssh_host_${type}_key
+    dest_key=/etc/ssh/ssh_host_${type}_key
+    key=${DATA_SSH_PATH}/ssh_host_${type}_key
     [ ! -f $key ] && {
         # generate missing keys
         [ -x /usr/bin/ssh-keygen ] && {
-        /usr/bin/ssh-keygen -N '' -t $type -f $key
+            /usr/bin/ssh-keygen -N '' -t $type -f $key
+        }
     }
-    }
+    cp -f $key $dest_key
 }; done
 
 # this is by purpose not customisable with an env var: by having the
 # group name fixed, we can even restart with another SFTP_USER env var
 # and have everything still working
-groupadd sftp
+groupadd -g ${SFTP_GROUP_ID} sftp &>/dev/null
+existing=$?
+if [ $existing -eq 0 ]; then
+    echo "Group ${SFTP_GROUP_ID}(sftp) created."
+else
+    groupadd sftp
+    echo "Group with id ${SFTP_GROUP_ID} already exists!"
+fi
+
 
 mkdir -m 0700 -p /var/empty
 mkdir -m 0755 -p /var/run
 
-existing=$(grep sftp /etc/passwd | cut -f 1 -d :)
+id $SFTP_USER &>/dev/null
+existing=$?
 
-if [ "$existing" = "$SFTP_USER" ] ; then
-    usermod -d /data -s /bin/false -g sftp -p $(openssl passwd $SFTP_PASS) $SFTP_USER
+if [ $existing -eq 0 ]; then
+    usermod -u $SFTP_USER_ID -d /data -s /bin/false -g sftp -p $(openssl passwd $SFTP_PASS) $SFTP_USER
+    echo "User ${SFTP_USER_ID}($SFTP_USER) modified."
 else
-    useradd -d /data -s /bin/false -g sftp -p $(openssl passwd $SFTP_PASS) $SFTP_USER
+    useradd -u $SFTP_USER_ID -d /data -s /bin/false -g sftp -p $(openssl passwd $SFTP_PASS) $SFTP_USER
+    created=$?
+    if [ $created -eq 0 ]; then
+        echo "User ${SFTP_USER_ID}($SFTP_USER) created."
+    else
+        echo "User ${SFTP_USER_ID}($SFTP_USER) creation failed."
+        exit
+    fi
 fi
 
+echo "FTP user info: $(id $SFTP_USER)"
+
+
 mkdir -m 0755 -p /data/incoming
-chown root:root /data
 chown -R $SFTP_USER:sftp /data/incoming
 
 sed -ie "s/^Subsystem.*sftp.*/Subsystem sftp internal-sftp\nMatch Group sftp\n\tChrootDirectory \/data\n\tForceCommand internal-sftp/" /etc/ssh/sshd_config
